@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 	const PetscReal Pi = 3.14159265359;
 	EPS eps; // eigensolver
 	PetscErrorCode ierr;
-	PetscInt nu=3, gridsize, N;
+	PetscInt nu=3, gridsize, N, IstartT, IendT, IstartU, IendU;
 	CTX_USER *ctx;
 	PetscLogDouble t1,t2,t3,t4;
 
@@ -38,14 +38,16 @@ int main(int argc, char** argv) {
 
 	/* Pre-calculate and save the T, U, V coefficients. */
 	/* First try Seq. */
-	Vec T, U;
+	Vec T, U, Tseq, Useq;
 	const PetscInt CoeffDim = (4*nu+1)*(4*nu+1)*(4*nu+1);
 
 	ierr = PetscTime(&t1);CHKERRQ(ierr);
-	ierr = VecCreateSeq(PETSC_COMM_SELF, CoeffDim, &T);CHKERRQ(ierr);
-	//TODO: only need 0~nu and use the even property.
-	for(PetscInt t=0; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
+
+	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, CoeffDim, &T);CHKERRQ(ierr);
+	ierr = VecGetOwnershipRange(T, &IstartT, &IendT); CHKERRQ(ierr);
+	for(PetscInt t=-2*nu; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
 		PetscInt index = ((t+2*nu)*(4*nu+1) + (u+2*nu)) * (4*nu+1) + v+2*nu;
+		if(index<IstartT || index>=IendT) continue; // out of local range
 		PetscReal Tcomp = 0;
 		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
 			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
@@ -54,18 +56,24 @@ int main(int argc, char** argv) {
 		}
 		Tcomp /= 2 * N;
 		ierr = VecSetValues(T, 1, &index, &Tcomp, INSERT_VALUES); CHKERRQ(ierr);
-		if(t!=0) { // set symmetric counterparts
-			index = ((-t+2*nu)*(4*nu+1) + (-u+2*nu)) * (4*nu+1) - v+2*nu;
-			ierr = VecSetValues(T, 1, &index, &Tcomp, INSERT_VALUES); CHKERRQ(ierr);
-		}
 	}
 	ierr = VecAssemblyBegin(T); VecAssemblyEnd(T); CHKERRQ(ierr);
-	ierr = PetscTime(&t2);CHKERRQ(ierr);
 
-	ierr = VecCreateSeq(PETSC_COMM_SELF, N, &U);CHKERRQ(ierr);
+	VecScatter Tscat;
+	ierr = VecCreateSeq(PETSC_COMM_SELF, CoeffDim, &Tseq);CHKERRQ(ierr);
+	ierr = VecScatterCreateToAll(T, &Tscat, &Tseq); CHKERRQ(ierr);
+	ierr = VecScatterBegin(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+	ierr = VecScatterEnd(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+
+	ierr = PetscTime(&t2);CHKERRQ(ierr);
+	ierr = PetscPrintf(PETSC_COMM_WORLD,"Elapsed Time:\na)T term: %f\n",t2-t1);CHKERRQ(ierr);
+
+	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, N, &U);CHKERRQ(ierr);
+	ierr = VecGetOwnershipRange(U, &IstartU, &IendU); CHKERRQ(ierr);
 	for(PetscInt t=-nu; t<=nu; t++) for(PetscInt u=-nu; u<=nu; u++) for(PetscInt v=-nu; v<=nu; v++) {
 		PetscInt index;
 		index = ((t+nu)*gridsize + (u+nu))*gridsize + v+nu;
+		if(index<IstartU || index>=IendU) continue;
 		PetscReal Ucomp = 0;
 		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
 			if(x==0 && y==0 && z==0) continue;
@@ -78,13 +86,19 @@ int main(int argc, char** argv) {
 	}
 	ierr = VecAssemblyBegin(U); VecAssemblyEnd(U); CHKERRQ(ierr);
 
-	ierr = PetscTime(&t3);CHKERRQ(ierr);
+	VecScatter Uscat;
+	ierr = VecCreateSeq(PETSC_COMM_SELF, N, &Useq);CHKERRQ(ierr);
+	ierr = VecScatterCreateToAll(U, &Uscat, &Useq); CHKERRQ(ierr);
+	ierr = VecScatterBegin(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+	ierr = VecScatterEnd(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
 
+	ierr = PetscTime(&t3);CHKERRQ(ierr);
+	ierr = PetscPrintf(PETSC_COMM_WORLD,"b)U term: %f\n",t3-t2);CHKERRQ(ierr);
 
 	ierr = PetscNew(&ctx);CHKERRQ(ierr);
 	ctx->N = N;
-	ctx->T = &T;
-	ctx->U = &U;
+	ctx->T = &Tseq;
+	ctx->U = &Useq;
 	ctx->gridsize = gridsize;
 	ctx->nu = nu;
 
@@ -105,7 +119,7 @@ int main(int argc, char** argv) {
 	/* Solve the system. */
 	ierr = EPSSolve(eps);CHKERRQ(ierr);
 	ierr = PetscTime(&t4);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD,"Elapsed Time:\na)T term: %f\nb)U term: %f\nc)Solving the system: %f\n",t2-t1,t3-t2,t4-t3);CHKERRQ(ierr);
+	ierr = PetscPrintf(PETSC_COMM_WORLD,"c)Solving the system: %f\n",t4-t3);CHKERRQ(ierr);
 
 
 	/* Output. */
