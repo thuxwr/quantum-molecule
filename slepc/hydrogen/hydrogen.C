@@ -11,9 +11,7 @@ static char help[] = "Solve hydrogen atom using multiple cores.";
 
 /* Pre-calculated data. */
 typedef struct {
-	Vec *k, *r;
 	Vec *T, *U, *V;
-	PetscReal Omega;
 	PetscInt N, gridsize, nu;
 } CTX_USER;
 
@@ -21,14 +19,12 @@ PetscErrorCode UserMatMult(Mat A, Vec x, Vec y);
 
 int main(int argc, char** argv) {
 	Mat A; 
-	Vec *k, *r; 
 	PetscReal Omega;
 	PetscReal length = 20;
 	const PetscReal Pi = 3.14159265359;
 	EPS eps; // eigensolver
 	PetscErrorCode ierr;
 	PetscInt nu=3, gridsize, N;
-	const PetscInt SpaceDim=3;
 	CTX_USER *ctx;
 	PetscLogDouble t1,t2,t3,t4;
 
@@ -39,34 +35,6 @@ int main(int argc, char** argv) {
 	gridsize = 2*nu+1;
 	N = gridsize*gridsize*gridsize;
 	Omega = length * length * length;
-
-	/* Create data for user function. */
-	Vec ki, ri; // Should I use DMDA instead?
-	ierr = VecCreateSeq(PETSC_COMM_SELF, SpaceDim, &ki);CHKERRQ(ierr);
-	ierr = VecCreateSeq(PETSC_COMM_SELF, SpaceDim, &ri);CHKERRQ(ierr);
-	ierr = VecDuplicateVecs(ki, N, &k);CHKERRQ(ierr);
-	ierr = VecDuplicateVecs(ri, N, &r);CHKERRQ(ierr);
-	// Do I need to initialize the vectors to 0??
-	for(PetscInt t=-nu; t<=nu; t++) for(PetscInt u=-nu; u<=nu; u++) for(PetscInt v=-nu; v<=nu; v++) {
-		PetscInt index;
-		index = ((t+nu)*gridsize + (u+nu))*gridsize + v+nu;
-		PetscReal kicomp[SpaceDim], ricomp[SpaceDim];
-		const PetscInt inds[] = {0, 1, 2};
-		kicomp[0] = 2 * Pi * t / length;
-		kicomp[1] = 2 * Pi * u / length;
-		kicomp[2] = 2 * Pi * v / length;
-		ricomp[0] = t * length / gridsize;
-		ricomp[1] = u * length / gridsize;
-		ricomp[2] = v * length / gridsize;
-		ierr = VecSetValues(ki, SpaceDim, inds, kicomp, INSERT_VALUES);CHKERRQ(ierr);
-		ierr = VecAssemblyBegin(ki); VecAssemblyEnd(ki); CHKERRQ(ierr);
-		ierr = VecCopy(ki, k[index]);CHKERRQ(ierr);
-		ierr = VecSetValues(ri, SpaceDim, inds, ricomp, INSERT_VALUES);CHKERRQ(ierr);
-		ierr = VecAssemblyBegin(ri); VecAssemblyEnd(ri); CHKERRQ(ierr);
-		ierr = VecCopy(ri, r[index]);CHKERRQ(ierr);
-//		ierr = PetscPrintf(PETSC_COMM_WORLD, "ri is:\n");
-//		ierr = VecView(r[index], PETSC_VIEWER_STDOUT_WORLD);
-	}
 
 	/* Pre-calculate and save the T, U, V coefficients. */
 	/* First try Seq. */
@@ -115,9 +83,6 @@ int main(int argc, char** argv) {
 
 	ierr = PetscNew(&ctx);CHKERRQ(ierr);
 	ctx->N = N;
-	ctx->k = k;
-	ctx->r = r;
-	ctx->Omega = Omega;
 	ctx->T = &T;
 	ctx->U = &U;
 	ctx->gridsize = gridsize;
@@ -157,13 +122,9 @@ int main(int argc, char** argv) {
 	ierr = PetscPrintf(PETSC_COMM_WORLD, "The eigenvalue is: %9f\n", eigenreal);CHKERRQ(ierr);
 	ierr = PetscViewerPopFormat(PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
 	ierr = EPSDestroy(&eps);CHKERRQ(ierr);
-	ierr = VecDestroyVecs(N, &k);
-	ierr = VecDestroyVecs(N, &r);
 	ierr = MatDestroy(&A);CHKERRQ(ierr);
 	ierr = VecDestroy(&eigenvr);CHKERRQ(ierr);
 	ierr = VecDestroy(&eigenvi);CHKERRQ(ierr);
-	ierr = VecDestroy(&ki);CHKERRQ(ierr);
-	ierr = VecDestroy(&ri);CHKERRQ(ierr);
 	ierr = SlepcFinalize();
 	return ierr;
 }
