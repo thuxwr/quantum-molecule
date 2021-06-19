@@ -27,9 +27,10 @@ int main(int argc, char** argv) {
 	const PetscReal Pi = 3.14159265359;
 	EPS eps; // eigensolver
 	PetscErrorCode ierr;
-	PetscInt nu=3, gridsize, N, Istart, Iend;
+	PetscInt nu=3, gridsize, N;
 	const PetscInt SpaceDim=3;
 	CTX_USER *ctx;
+	PetscLogDouble t1,t2,t3,t4;
 
 	ierr = SlepcInitialize(&argc,&argv,(char*)0,help); if (ierr) return ierr;
 	ierr = PetscOptionsGetInt(NULL,NULL,"-nu",&nu,NULL);CHKERRQ(ierr);
@@ -72,11 +73,11 @@ int main(int argc, char** argv) {
 	Vec T, U;
 	const PetscInt CoeffDim = (4*nu+1)*(4*nu+1)*(4*nu+1);
 
+	ierr = PetscTime(&t1);CHKERRQ(ierr);
 	ierr = VecCreateSeq(PETSC_COMM_SELF, CoeffDim, &T);CHKERRQ(ierr);
 	//TODO: only need 0~nu and use the even property.
-	for(PetscInt t=-2*nu; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
-		PetscInt index;
-		index = ((t+2*nu)*(4*nu+1) + (u+2*nu)) * (4*nu+1) + v+2*nu;
+	for(PetscInt t=0; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
+		PetscInt index = ((t+2*nu)*(4*nu+1) + (u+2*nu)) * (4*nu+1) + v+2*nu;
 		PetscReal Tcomp = 0;
 		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
 			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
@@ -85,8 +86,13 @@ int main(int argc, char** argv) {
 		}
 		Tcomp /= 2 * N;
 		ierr = VecSetValues(T, 1, &index, &Tcomp, INSERT_VALUES); CHKERRQ(ierr);
+		if(t!=0) { // set symmetric counterparts
+			index = ((-t+2*nu)*(4*nu+1) + (-u+2*nu)) * (4*nu+1) - v+2*nu;
+			ierr = VecSetValues(T, 1, &index, &Tcomp, INSERT_VALUES); CHKERRQ(ierr);
+		}
 	}
 	ierr = VecAssemblyBegin(T); VecAssemblyEnd(T); CHKERRQ(ierr);
+	ierr = PetscTime(&t2);CHKERRQ(ierr);
 
 	ierr = VecCreateSeq(PETSC_COMM_SELF, N, &U);CHKERRQ(ierr);
 	for(PetscInt t=-nu; t<=nu; t++) for(PetscInt u=-nu; u<=nu; u++) for(PetscInt v=-nu; v<=nu; v++) {
@@ -104,6 +110,7 @@ int main(int argc, char** argv) {
 	}
 	ierr = VecAssemblyBegin(U); VecAssemblyEnd(U); CHKERRQ(ierr);
 
+	ierr = PetscTime(&t3);CHKERRQ(ierr);
 
 
 	ierr = PetscNew(&ctx);CHKERRQ(ierr);
@@ -118,12 +125,7 @@ int main(int argc, char** argv) {
 
 	/* Create shell matrix for Hamiltonian. */
 	ierr = MatCreateShell(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, N, N, ctx, &A);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD," Shell created. ");CHKERRQ(ierr);
 	ierr = MatShellSetOperation(A, MATOP_MULT, (void(*)(void))UserMatMult);CHKERRQ(ierr);
-
-	ierr = MatGetOwnershipRange(A, &Istart, &Iend);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD," Ownership: %D %D", Istart, Iend);CHKERRQ(ierr);
-
 
 	/* Create eigensolver. */
 	ierr = EPSCreate(PETSC_COMM_WORLD, &eps);CHKERRQ(ierr);
@@ -136,11 +138,9 @@ int main(int argc, char** argv) {
 	/* Preconditioner? */
 
 	/* Solve the system. */
-	PetscLogDouble t1,t2;
-	ierr = PetscTime(&t1);CHKERRQ(ierr);
 	ierr = EPSSolve(eps);CHKERRQ(ierr);
-	ierr = PetscTime(&t2);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD," Elapsed Time: %f\n",t2-t1);
+	ierr = PetscTime(&t4);CHKERRQ(ierr);
+	ierr = PetscPrintf(PETSC_COMM_WORLD,"Elapsed Time:\na)T term: %f\nb)U term: %f\nc)Solving the system: %f\n",t2-t1,t3-t2,t4-t3);CHKERRQ(ierr);
 
 
 	/* Output. */
