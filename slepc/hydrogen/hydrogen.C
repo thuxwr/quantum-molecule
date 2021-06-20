@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 	/* Create eigensolver. */
 	ierr = EPSCreate(PETSC_COMM_WORLD, &eps);CHKERRQ(ierr);
 	ierr = EPSSetOperators(eps, A, NULL);CHKERRQ(ierr);
-	ierr = EPSSetType(eps, EPSARNOLDI);CHKERRQ(ierr);
+	ierr = EPSSetType(eps, EPSKRYLOVSCHUR);CHKERRQ(ierr);
 	ierr = EPSSetProblemType(eps, EPS_HEP);CHKERRQ(ierr);
 	ierr = EPSSetWhichEigenpairs(eps,EPS_SMALLEST_REAL);CHKERRQ(ierr);
 	ierr = EPSSetFromOptions(eps);CHKERRQ(ierr);
