@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 	ierr = SlepcInitialize(&argc,&argv,(char*)0,help); if (ierr) return ierr;
 	ierr = PetscOptionsGetInt(NULL,NULL,"-nu",&nu,NULL);CHKERRQ(ierr);
 	ierr = PetscOptionsGetReal(NULL,NULL,"-length",&length,NULL);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD, "Nu value: %D \n", nu);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD, "Nu value: %D \n", nu);CHKERRQ(ierr);
 	gridsize = 2*nu+1;
 	N = gridsize*gridsize*gridsize;
 	DimHilbert = N * (N-1) / 2;
@@ -63,128 +63,129 @@ int main(int argc, char** argv) {
 	ierr = VecAssemblyBegin(T); VecAssemblyEnd(T); CHKERRQ(ierr);
 
 	VecScatter Tscat;
-	ierr = VecCreateSeq(PETSC_COMM_SELF, DimCoeff, &Tseq);CHKERRQ(ierr);
+//	ierr = VecCreateSeq(PETSC_COMM_SELF, DimCoeff, &Tseq);CHKERRQ(ierr);
 	ierr = VecScatterCreateToAll(T, &Tscat, &Tseq); CHKERRQ(ierr);
-	ierr = VecScatterBegin(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
-	ierr = VecScatterEnd(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	ierr = VecScatterBegin(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	ierr = VecScatterEnd(Tscat, T, Tseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
 	VecScatterDestroy(&Tscat);
-
-	ierr = PetscTime(&t2);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD,"Elapsed Time:\na)T term: %f\n",t2-t1);CHKERRQ(ierr);
-
-	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, N, &U);CHKERRQ(ierr);
-	ierr = VecGetOwnershipRange(U, &IstartU, &IendU); CHKERRQ(ierr);
-	for(PetscInt t=-nu; t<=nu; t++) for(PetscInt u=-nu; u<=nu; u++) for(PetscInt v=-nu; v<=nu; v++) {
-		PetscInt index;
-		index = ((t+nu)*gridsize + (u+nu))*gridsize + v+nu;
-		if(index<IstartU || index>=IendU) continue;
-		PetscReal Ucomp = 0;
-		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
-			if(x==0 && y==0 && z==0) continue;
-			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
-			PetscReal rx=t*length/gridsize, ry=u*length/gridsize, rz=v*length/gridsize;
-			Ucomp += PetscCosScalar(kx*rx+ky*ry+kz*(rz-R1z))/(kx*kx+ky*ky+kz*kz);
-			Ucomp += PetscCosScalar(kx*rx+ky*ry+kz*(rz-R2z))/(kx*kx+ky*ky+kz*kz);
-		}
-		Ucomp *= -4 * Pi / Omega;
-		ierr = VecSetValues(U, 1, &index, &Ucomp, INSERT_VALUES); CHKERRQ(ierr);
-	}
-	ierr = VecAssemblyBegin(U); VecAssemblyEnd(U); CHKERRQ(ierr);
-
-	VecScatter Uscat;
-	ierr = VecCreateSeq(PETSC_COMM_SELF, N, &Useq);CHKERRQ(ierr);
-	ierr = VecScatterCreateToAll(U, &Uscat, &Useq); CHKERRQ(ierr);
-	ierr = VecScatterBegin(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
-	ierr = VecScatterEnd(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
-	VecScatterDestroy(&Uscat);
-
-	ierr = PetscTime(&t3);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD,"b)U term: %f\n",t3-t2);CHKERRQ(ierr);
-
-	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, DimCoeff, &V);CHKERRQ(ierr);
-	ierr = VecGetOwnershipRange(V, &IstartV, &IendV); CHKERRQ(ierr);
-	for(PetscInt t=-2*nu; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
-		PetscInt index = ((t+2*nu)*(4*nu+1) + (u+2*nu)) * (4*nu+1) + v+2*nu;
-		if(index<IstartV || index>=IendV) continue; // out of local range
-		PetscReal Vcomp = 0;
-		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
-			if(x==0 && y==0 && z==0) continue;
-			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
-			PetscReal rx=t*length/gridsize, ry=u*length/gridsize, rz=v*length/gridsize;
-			if(rx*rx+ry*ry+rz*rz>D*D) continue; // Coulomb cutoff.
-			Vcomp += PetscCosScalar(kx*rx+ky*ry+kz*rz) / (kx*kx+ky*ky+kz*kz);
-		}
-		Vcomp *= 2 * Pi / Omega;
-		ierr = VecSetValues(V, 1, &index, &Vcomp, INSERT_VALUES); CHKERRQ(ierr);
-	}
-	ierr = VecAssemblyBegin(V); VecAssemblyEnd(V); CHKERRQ(ierr);
-
-	VecScatter Vscat;
-	ierr = VecCreateSeq(PETSC_COMM_SELF, DimCoeff, &Vseq);CHKERRQ(ierr);
-	ierr = VecScatterCreateToAll(V, &Vscat, &Vseq); CHKERRQ(ierr);
-	ierr = VecScatterBegin(Vscat, V, Vseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
-	ierr = VecScatterEnd(Vscat, V, Vseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
-	VecScatterDestroy(&Vscat);
-
-	ierr = PetscTime(&t4);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD,"c)V term: %f\n",t4-t3);CHKERRQ(ierr);
-
-	ierr = PetscNew(&ctx);CHKERRQ(ierr);
-	ctx->N = N;
-	ctx->T = &Tseq;
-	ctx->U = &Useq;
-	ctx->V = &Vseq;
-	ctx->gridsize = gridsize;
-	ctx->nu = nu;
-	ctx->DimHilbert = DimHilbert;
-
-	/* Create shell matrix for Hamiltonian. */
-	ierr = MatCreateShell(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, DimHilbert, DimHilbert, ctx, &A);CHKERRQ(ierr);
-	ierr = MatShellSetOperation(A, MATOP_MULT, (void(*)(void))UserMatMult);CHKERRQ(ierr);
-
-	/* Create eigensolver. */
-	ierr = EPSCreate(PETSC_COMM_WORLD, &eps);CHKERRQ(ierr);
-	ierr = EPSSetOperators(eps, A, NULL);CHKERRQ(ierr);
-	ierr = EPSSetType(eps, EPSARNOLDI);CHKERRQ(ierr);
-	ierr = EPSSetProblemType(eps, EPS_HEP);CHKERRQ(ierr);
-	ierr = EPSSetWhichEigenpairs(eps,EPS_SMALLEST_REAL);CHKERRQ(ierr);
-	ierr = EPSSetFromOptions(eps);CHKERRQ(ierr);
-
-	/* Preconditioner? */
-
-	/* Solve the system. */
-	ierr = EPSSolve(eps);CHKERRQ(ierr);
-	ierr = PetscTime(&t5);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD,"d)Solving the system: %f\n",t5-t4);CHKERRQ(ierr);
-
-
-	/* Output. */
-	PetscInt nconv;
-	ierr = EPSGetConverged(eps,&nconv);CHKERRQ(ierr);
-	ierr = PetscPrintf(PETSC_COMM_WORLD," Number of converged eigenpairs: %D\n\n",nconv);CHKERRQ(ierr);
-	PetscScalar eigenreal, eigenimag;
-	Vec eigenvr, eigenvi;
-	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, DimHilbert, &eigenvr);CHKERRQ(ierr);
-	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, DimHilbert, &eigenvi);CHKERRQ(ierr);
-	if(nconv>0) {
-		ierr = EPSGetEigenpair(eps, 0, &eigenreal, &eigenimag, eigenvr, eigenvi);CHKERRQ(ierr);
-	}
-	ierr = PetscPrintf(PETSC_COMM_WORLD, "The eigenvalue is: %9f\n", eigenreal);CHKERRQ(ierr);
-	ierr = PetscViewerPopFormat(PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+//	ierr = VecAssemblyBegin(Tseq); VecAssemblyEnd(Tseq); CHKERRQ(ierr);
+//
+//	ierr = PetscTime(&t2);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD,"Elapsed Time:\na)T term: %f\n",t2-t1);CHKERRQ(ierr);
+//
+//	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, N, &U);CHKERRQ(ierr);
+//	ierr = VecGetOwnershipRange(U, &IstartU, &IendU); CHKERRQ(ierr);
+//	for(PetscInt t=-nu; t<=nu; t++) for(PetscInt u=-nu; u<=nu; u++) for(PetscInt v=-nu; v<=nu; v++) {
+//		PetscInt index;
+//		index = ((t+nu)*gridsize + (u+nu))*gridsize + v+nu;
+//		if(index<IstartU || index>=IendU) continue;
+//		PetscReal Ucomp = 0;
+//		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
+//			if(x==0 && y==0 && z==0) continue;
+//			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
+//			PetscReal rx=t*length/gridsize, ry=u*length/gridsize, rz=v*length/gridsize;
+//			Ucomp += PetscCosScalar(kx*rx+ky*ry+kz*(rz-R1z))/(kx*kx+ky*ky+kz*kz);
+//			Ucomp += PetscCosScalar(kx*rx+ky*ry+kz*(rz-R2z))/(kx*kx+ky*ky+kz*kz);
+//		}
+//		Ucomp *= -4 * Pi / Omega;
+//		ierr = VecSetValues(U, 1, &index, &Ucomp, INSERT_VALUES); CHKERRQ(ierr);
+//	}
+//	ierr = VecAssemblyBegin(U); VecAssemblyEnd(U); CHKERRQ(ierr);
+//
+//	VecScatter Uscat;
+//	ierr = VecCreateSeq(PETSC_COMM_SELF, N, &Useq);CHKERRQ(ierr);
+//	ierr = VecScatterCreateToAll(U, &Uscat, &Useq); CHKERRQ(ierr);
+//	ierr = VecScatterBegin(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	ierr = VecScatterEnd(Uscat, U, Useq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	VecScatterDestroy(&Uscat);
+//
+//	ierr = PetscTime(&t3);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD,"b)U term: %f\n",t3-t2);CHKERRQ(ierr);
+//
+//	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DETERMINE, DimCoeff, &V);CHKERRQ(ierr);
+//	ierr = VecGetOwnershipRange(V, &IstartV, &IendV); CHKERRQ(ierr);
+//	for(PetscInt t=-2*nu; t<=2*nu; t++) for(PetscInt u=-2*nu; u<=2*nu; u++) for(PetscInt v=-2*nu; v<=2*nu; v++) {
+//		PetscInt index = ((t+2*nu)*(4*nu+1) + (u+2*nu)) * (4*nu+1) + v+2*nu;
+//		if(index<IstartV || index>=IendV) continue; // out of local range
+//		PetscReal Vcomp = 0;
+//		for(PetscInt x=-nu; x<=nu; x++) for(PetscInt y=-nu; y<=nu; y++) for(PetscInt z=-nu; z<=nu; z++) { // sum over nu
+//			if(x==0 && y==0 && z==0) continue;
+//			PetscReal kx=2*Pi*x/length, ky=2*Pi*y/length, kz=2*Pi*z/length;
+//			PetscReal rx=t*length/gridsize, ry=u*length/gridsize, rz=v*length/gridsize;
+//			if(rx*rx+ry*ry+rz*rz>D*D) continue; // Coulomb cutoff.
+//			Vcomp += PetscCosScalar(kx*rx+ky*ry+kz*rz) / (kx*kx+ky*ky+kz*kz);
+//		}
+//		Vcomp *= 2 * Pi / Omega;
+//		ierr = VecSetValues(V, 1, &index, &Vcomp, INSERT_VALUES); CHKERRQ(ierr);
+//	}
+//	ierr = VecAssemblyBegin(V); VecAssemblyEnd(V); CHKERRQ(ierr);
+//
+//	VecScatter Vscat;
+//	ierr = VecCreateSeq(PETSC_COMM_SELF, DimCoeff, &Vseq);CHKERRQ(ierr);
+//	ierr = VecScatterCreateToAll(V, &Vscat, &Vseq); CHKERRQ(ierr);
+//	ierr = VecScatterBegin(Vscat, V, Vseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	ierr = VecScatterEnd(Vscat, V, Vseq, INSERT_VALUES, SCATTER_FORWARD); CHKERRQ(ierr);
+//	VecScatterDestroy(&Vscat);
+//
+//	ierr = PetscTime(&t4);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD,"c)V term: %f\n",t4-t3);CHKERRQ(ierr);
+//
+//	ierr = PetscNew(&ctx);CHKERRQ(ierr);
+//	ctx->N = N;
+//	ctx->T = &Tseq;
+//	ctx->U = &Useq;
+//	ctx->V = &Vseq;
+//	ctx->gridsize = gridsize;
+//	ctx->nu = nu;
+//	ctx->DimHilbert = DimHilbert;
+//
+//	/* Create shell matrix for Hamiltonian. */
+//	ierr = MatCreateShell(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, DimHilbert, DimHilbert, ctx, &A);CHKERRQ(ierr);
+//	ierr = MatShellSetOperation(A, MATOP_MULT, (void(*)(void))UserMatMult);CHKERRQ(ierr);
+//
+//	/* Create eigensolver. */
+//	ierr = EPSCreate(PETSC_COMM_WORLD, &eps);CHKERRQ(ierr);
+//	ierr = EPSSetOperators(eps, A, NULL);CHKERRQ(ierr);
+//	ierr = EPSSetType(eps, EPSARNOLDI);CHKERRQ(ierr);
+//	ierr = EPSSetProblemType(eps, EPS_HEP);CHKERRQ(ierr);
+//	ierr = EPSSetWhichEigenpairs(eps,EPS_SMALLEST_REAL);CHKERRQ(ierr);
+//	ierr = EPSSetFromOptions(eps);CHKERRQ(ierr);
+//
+//	/* Preconditioner? */
+//
+//	/* Solve the system. */
+//	ierr = EPSSolve(eps);CHKERRQ(ierr);
+//	ierr = PetscTime(&t5);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD,"d)Solving the system: %f\n",t5-t4);CHKERRQ(ierr);
+//
+//
+//	/* Output. */
+//	PetscInt nconv;
+//	ierr = EPSGetConverged(eps,&nconv);CHKERRQ(ierr);
+//	ierr = PetscPrintf(PETSC_COMM_WORLD," Number of converged eigenpairs: %D\n\n",nconv);CHKERRQ(ierr);
+//	PetscScalar eigenreal, eigenimag;
+//	Vec eigenvr, eigenvi;
+//	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, DimHilbert, &eigenvr);CHKERRQ(ierr);
+//	ierr = VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, DimHilbert, &eigenvi);CHKERRQ(ierr);
+//	if(nconv>0) {
+//		ierr = EPSGetEigenpair(eps, 0, &eigenreal, &eigenimag, eigenvr, eigenvi);CHKERRQ(ierr);
+//	}
+//	ierr = PetscPrintf(PETSC_COMM_WORLD, "The eigenvalue is: %9f\n", eigenreal);CHKERRQ(ierr);
+//	ierr = PetscViewerPopFormat(PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
 	ierr = EPSDestroy(&eps);CHKERRQ(ierr);
-	ierr = MatDestroy(&A);CHKERRQ(ierr);
+//	ierr = MatDestroy(&A);CHKERRQ(ierr);
 	ierr = VecDestroy(&T);CHKERRQ(ierr);
-	ierr = VecDestroy(&U);CHKERRQ(ierr);
-	ierr = VecDestroy(&V);CHKERRQ(ierr);
-	ierr = VecDestroy(ctx->T);CHKERRQ(ierr);
-	ierr = VecDestroy(ctx->U);CHKERRQ(ierr);
-	ierr = VecDestroy(ctx->V);CHKERRQ(ierr);
+//	ierr = VecDestroy(&U);CHKERRQ(ierr);
+//	ierr = VecDestroy(&V);CHKERRQ(ierr);
+//	ierr = VecDestroy(ctx->T);CHKERRQ(ierr);
+//	ierr = VecDestroy(ctx->U);CHKERRQ(ierr);
+//	ierr = VecDestroy(ctx->V);CHKERRQ(ierr);
 	ierr = VecDestroy(&Tseq);CHKERRQ(ierr);
-	ierr = VecDestroy(&Useq);CHKERRQ(ierr);
-	ierr = VecDestroy(&Vseq);CHKERRQ(ierr);
-	ierr = PetscFree(ctx);CHKERRQ(ierr);
-	ierr = VecDestroy(&eigenvr);CHKERRQ(ierr);
-	ierr = VecDestroy(&eigenvi);CHKERRQ(ierr);
+//	ierr = VecDestroy(&Useq);CHKERRQ(ierr);
+//	ierr = VecDestroy(&Vseq);CHKERRQ(ierr);
+//	ierr = PetscFree(ctx);CHKERRQ(ierr);
+//	ierr = VecDestroy(&eigenvr);CHKERRQ(ierr);
+//	ierr = VecDestroy(&eigenvi);CHKERRQ(ierr);
 	ierr = SlepcFinalize();
 	return ierr;
 }
